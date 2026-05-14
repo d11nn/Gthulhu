@@ -33,6 +33,8 @@ import (
 	"github.com/Gthulhu/Gthulhu/monitor/crdwatcher"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 )
@@ -62,6 +64,14 @@ func StartMonitor(ctx context.Context, cfg Config, logger *slog.Logger) error {
 	done := make(chan struct{})
 	defer close(done)
 	podMapper.StartPeriodicScan(30*time.Second, done)
+
+	if kubeConfig, err := buildKubeConfig(cfg.KubeConfigPath); err != nil {
+		logger.Warn("kubeconfig unavailable, pod index disabled", "error", err)
+	} else {
+		if err := startPodIndexRefresher(ctx, kubeConfig, podMapper, cfg.NodeName, logger); err != nil {
+			logger.Warn("pod index refresher disabled", "error", err)
+		}
+	}
 
 	// eBPF Collector
 	interval := cfg.CollectionIntervalSec
@@ -136,6 +146,53 @@ func StartMonitor(ctx context.Context, cfg Config, logger *slog.Logger) error {
 
 	logger.Info("monitor stopped")
 	return err
+}
+
+func startPodIndexRefresher(ctx context.Context, kubeConfig *rest.Config, podMapper *collector.PodMapper, nodeName string, logger *slog.Logger) error {
+	if nodeName == "" {
+		return fmt.Errorf("NODE_NAME is empty")
+	}
+	client, err := kubernetes.NewForConfig(kubeConfig)
+	if err != nil {
+		return fmt.Errorf("kubernetes client: %w", err)
+	}
+
+	refresh := func() {
+		pods, err := client.CoreV1().Pods("").List(ctx, metav1.ListOptions{
+			FieldSelector: "spec.nodeName=" + nodeName,
+		})
+		if err != nil {
+			logger.Warn("failed to refresh pod index", "node", nodeName, "error", err)
+			return
+		}
+		index := make(map[string]*collector.PodRef, len(pods.Items))
+		for i := range pods.Items {
+			pod := &pods.Items[i]
+			index[string(pod.UID)] = &collector.PodRef{
+				PodName:   pod.Name,
+				PodUID:    string(pod.UID),
+				Namespace: pod.Namespace,
+				NodeName:  pod.Spec.NodeName,
+			}
+		}
+		podMapper.SetPodIndex(index)
+		logger.Info("pod index refreshed", "node", nodeName, "pods", len(index))
+	}
+
+	refresh()
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				refresh()
+			}
+		}
+	}()
+	return nil
 }
 
 // buildKubeConfig returns a Kubernetes rest.Config from a kubeconfig path
