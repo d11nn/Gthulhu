@@ -16,6 +16,9 @@ rules:
   - apiGroups: ["metrics.k8s.io"]
     resources: ["nodes", "pods"]
     verbs: ["get", "list"]
+  - apiGroups: ["gthulhu.io"]
+    resources: ["podschedulingmetrics"]
+    verbs: ["get", "list", "watch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -83,4 +86,3 @@ subjects:
     name: {{ include "gthulhu.fullname" . }}-manager
     namespace: {{ .Release.Namespace }}
 {{- end }}
-

@@ -41,8 +41,9 @@ spec:
             {{- toYaml .Values.scheduler.securityContext | nindent 12 }}
           command:
             - /gthulhu/main
-            - daemon
+            - {{ .Values.scheduler.runtimeMode | quote }}
           args:
+            {{- if eq .Values.scheduler.runtimeMode "daemon" }}
             - -config
             - /etc/gthulhu/config.yaml
             - -control-addr
@@ -51,6 +52,21 @@ spec:
             - {{ .Values.scheduler.daemon.runtimeConfigPath | quote }}
             - -restart-delay
             - {{ .Values.scheduler.daemon.restartDelay | quote }}
+            {{- else }}
+            - -config
+            - /etc/gthulhu/config.yaml
+            {{- end }}
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+          ports:
+            {{- if .Values.scheduler.monitor.enabled }}
+            - name: monitor-metrics
+              containerPort: {{ .Values.scheduler.monitor.prometheusPort }}
+              protocol: TCP
+            {{- end }}
           volumeMounts:
             - name: sys-kernel-debug
               mountPath: /sys/kernel/debug
@@ -162,7 +178,7 @@ spec:
           projected:
             sources:
               - configMap:
-                  name: {{ include "gthulhu.fullname" . }}-scheduler-config
+                  name: {{ include "gthulhu.fullname" . }}-scheduler-config{{- with .Values.scheduler.config.nameSuffix }}-{{ . }}{{- end }}
                   items:
                     - key: jwt_public_key.pem
                       path: jwt_public_key.pem
@@ -174,7 +190,7 @@ spec:
         {{- else }}
         - name: config-volume
           configMap:
-            name: {{ include "gthulhu.fullname" . }}-scheduler-config
+            name: {{ include "gthulhu.fullname" . }}-scheduler-config{{- with .Values.scheduler.config.nameSuffix }}-{{ . }}{{- end }}
         {{- end }}
         - name: var-run
           hostPath:
@@ -323,4 +339,3 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
 {{- end }}
-

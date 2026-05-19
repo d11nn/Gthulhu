@@ -18,7 +18,7 @@ spec:
     app.kubernetes.io/component: manager
 {{- end }}
 ---
-{{- if and .Values.scheduler.enabled .Values.scheduler.sidecar.enabled }}
+{{- if and .Values.scheduler.enabled (or .Values.scheduler.sidecar.enabled .Values.scheduler.monitor.enabled) }}
 apiVersion: v1
 kind: Service
 metadata:
@@ -30,10 +30,18 @@ spec:
   # Headless service for DaemonSet
   clusterIP: None
   ports:
+    {{- if .Values.scheduler.sidecar.enabled }}
     - port: {{ .Values.scheduler.sidecar.service.port }}
       targetPort: {{ .Values.scheduler.sidecar.service.targetPort }}
       protocol: TCP
       name: http
+    {{- end }}
+    {{- if .Values.scheduler.monitor.enabled }}
+    - port: {{ .Values.scheduler.monitor.prometheusPort }}
+      targetPort: monitor-metrics
+      protocol: TCP
+      name: monitor-metrics
+    {{- end }}
   selector:
     {{- include "gthulhu.selectorLabels" . | nindent 4 }}
     app.kubernetes.io/component: scheduler

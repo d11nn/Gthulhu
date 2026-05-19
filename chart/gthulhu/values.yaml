@@ -15,6 +15,9 @@ mongodb:
 scheduler:
   enabled: true
   replicaCount: 1
+  # daemon keeps the runtime control API enabled. scheduler runs /gthulhu/main
+  # scheduler directly and is used for monitor-only deployments.
+  runtimeMode: daemon
   
   image:
     # Use the scx-flavored image so mode=scx can launch bundled /gthulhu/scx_* schedulers.
@@ -57,6 +60,29 @@ scheduler:
     controlAddr: ":18080"
     runtimeConfigPath: "/tmp/gthulhu/runtime-config.yaml"
     restartDelay: "2s"
+
+  config:
+    nameSuffix: ""
+    mode: gthulhu
+    kernelMode: true
+    maxTimeWatchdog: true
+    earlyProcessing: false
+    builtinIdle: false
+
+  monitor:
+    enabled: true
+    bpfObjectPath: /gthulhu/sched_monitor.bpf.o
+    collectionIntervalSec: 10
+    monitorAll: false
+    streamEvents: false
+    prometheusPort: 9090
+    enableCRDWatcher: false
+    kubeConfigPath: ""
+
+  api:
+    enabled: true
+    authEnabled: true
+    interval: 5
   
   # Sidecar container configuration (formerly Decision Maker)
   # Shares PID namespace with the host

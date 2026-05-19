@@ -2,11 +2,10 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: {{ include "gthulhu.fullname" . }}-scheduler-config
+  name: {{ include "gthulhu.fullname" . }}-scheduler-config{{- with .Values.scheduler.config.nameSuffix }}-{{ . }}{{- end }}
   labels:
     {{- include "gthulhu.labels" . | nindent 4 }}
     app.kubernetes.io/component: scheduler
-immutable: true
 data:
   jwt_public_key.pem: |
     -----BEGIN PUBLIC KEY-----
@@ -34,17 +33,26 @@ data:
       # Minimum time slice in nanoseconds (default: 500000 = 0.5ms)
       slice_ns_min: 1000000
 
-      # Mode could be: simple, simple-fifo, gthulhu
-      mode: gthulhu
-      kernel_mode: true # experimental feature
-      max_time_watchdog: true
+      # Mode could be: none, simple, scx, gthulhu
+      mode: {{ .Values.scheduler.config.mode | quote }}
+      kernel_mode: {{ .Values.scheduler.config.kernelMode }}
+      max_time_watchdog: {{ .Values.scheduler.config.maxTimeWatchdog }}
+    monitor:
+      enabled: {{ .Values.scheduler.monitor.enabled }}
+      bpf_object_path: {{ .Values.scheduler.monitor.bpfObjectPath | quote }}
+      collection_interval_sec: {{ .Values.scheduler.monitor.collectionIntervalSec }}
+      monitor_all: {{ .Values.scheduler.monitor.monitorAll }}
+      stream_events: {{ .Values.scheduler.monitor.streamEvents }}
+      prometheus_port: {{ .Values.scheduler.monitor.prometheusPort }}
+      enable_crd_watcher: {{ .Values.scheduler.monitor.enableCRDWatcher }}
+      kubeconfig_path: {{ .Values.scheduler.monitor.kubeConfigPath | quote }}
     api:
-      enabled: true
-      auth_enabled: true
+      enabled: {{ .Values.scheduler.api.enabled }}
+      auth_enabled: {{ .Values.scheduler.api.authEnabled }}
       url: http://localhost:{{ .Values.scheduler.sidecar.port }}
-      interval: 5
+      interval: {{ .Values.scheduler.api.interval }}
       public_key_path: /etc/gthulhu/jwt_public_key.pem
     debug: false
-    early_processing: false
-    builtin_idle: false
+    early_processing: {{ .Values.scheduler.config.earlyProcessing }}
+    builtin_idle: {{ .Values.scheduler.config.builtinIdle }}
 {{- end }}
