@@ -379,7 +379,7 @@ controller:
       scaledObjectName: smf-gthulhu-scaler
       minReplicas: 1
       maxReplicas: 5
-      serviceQuery: 'max(smf_pdu_sessions{namespace="aether-5gc"})'
+      serviceQuery: 'sum(rate(n4_messages_total{namespace="aether-5gc",service="smf"}[5m]))'
       schedulingQuery: 'max(rate(gthulhu_pod_involuntary_ctx_switches_total{namespace="aether-5gc",pod_name=~"smf.*"}[5m]))'
       serviceThreshold: 100
       schedulingThreshold: 100
@@ -397,7 +397,7 @@ controller:
       scaledObjectName: upf-gthulhu-scaler
       minReplicas: 1
       maxReplicas: 5
-      serviceQuery: 'sum(rate(upf_session_tx_bytes{namespace="aether-5gc"}[5m]))'
+      serviceQuery: 'sum(rate(upf_bytes_count{namespace="aether-5gc",service="upf-http"}[5m]))'
       schedulingQuery: 'max(rate(gthulhu_pod_involuntary_ctx_switches_total{namespace="aether-5gc",pod_name=~"upf.*"}[5m]))'
       serviceThreshold: 100000000
       schedulingThreshold: 100
