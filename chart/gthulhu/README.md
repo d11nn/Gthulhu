@@ -86,6 +86,7 @@ The following table lists the configurable parameters and their default values:
 |-----------|-------------|---------|
 | `monitoring.enabled` | Enable monitoring | `false` |
 | `monitoring.serviceMonitor.enabled` | Enable ServiceMonitor for Prometheus | `false` |
+| `controller.podSchedulingMetrics.enabled` | Create target-scoped PodSchedulingMetrics resources for controller scheduling signals | `true` |
 
 ## Examples
 

@@ -1,0 +1,33 @@
+{{- if and .Values.controller.enabled .Values.scheduler.enabled .Values.controller.podSchedulingMetrics.enabled }}
+{{- range $name, $target := .Values.controller.targets }}
+---
+apiVersion: gthulhu.io/v1alpha1
+kind: PodSchedulingMetrics
+metadata:
+  name: {{ include "gthulhu.fullname" $ }}-{{ $name }}-metrics
+  namespace: {{ $target.namespace }}
+  labels:
+    {{- include "gthulhu.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: scaling-controller
+    gthulhu.io/target: {{ $name | quote }}
+spec:
+  enabled: true
+  collectionIntervalSeconds: {{ $.Values.scheduler.monitor.collectionIntervalSec }}
+  k8sNamespaces:
+    - {{ $target.namespace | quote }}
+  labelSelectors:
+    {{- range $key, $value := $target.selector }}
+    - key: {{ $key | quote }}
+      value: {{ $value | quote }}
+    {{- end }}
+  metrics:
+    voluntaryCtxSwitches: true
+    involuntaryCtxSwitches: true
+    cpuTimeNs: true
+    waitTimeNs: true
+    runCount: true
+    cpuMigrations: true
+  scaling:
+    enabled: false
+{{- end }}
+{{- end }}

@@ -356,6 +356,8 @@ controller:
     enabled: true
     interval: 30s
     labels: {}
+  podSchedulingMetrics:
+    enabled: true
   resources:
     limits:
       cpu: 500m
