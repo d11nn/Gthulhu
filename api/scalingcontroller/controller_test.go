@@ -71,6 +71,71 @@ func testController(t *testing.T, prom *fakePrometheus, strategy *fakeStrategy, 
 	return controller
 }
 
+func TestControllerRejectsInvalidProfiles(t *testing.T) {
+	validConfig := func() Config {
+		return Config{
+			BaselineProfile: Profile{Priority: 10, ExecutionTime: 20},
+			BoostedProfile:  Profile{Priority: 2, ExecutionTime: 50},
+			Targets: []TargetConfig{{
+				Name:            "smf",
+				Namespace:       "aether-5gc",
+				ServiceQuery:    "service",
+				SchedulingQuery: "scheduling",
+			}},
+		}
+	}
+	tests := []struct {
+		name      string
+		mutate    func(*Config)
+		wantError string
+	}{
+		{
+			name: "baseline priority below scheduler range",
+			mutate: func(cfg *Config) {
+				cfg.BaselineProfile.Priority = -1
+			},
+			wantError: "baseline priority -1 must be between 0 and 20",
+		},
+		{
+			name: "boosted priority above scheduler range",
+			mutate: func(cfg *Config) {
+				cfg.BoostedProfile.Priority = 21
+			},
+			wantError: "boosted priority 21 must be between 0 and 20",
+		},
+		{
+			name: "baseline execution time is not positive",
+			mutate: func(cfg *Config) {
+				cfg.BaselineProfile.ExecutionTime = 0
+			},
+			wantError: "baseline execution time 0 must be positive",
+		},
+		{
+			name: "boosted priority does not increase scheduling priority",
+			mutate: func(cfg *Config) {
+				cfg.BoostedProfile.Priority = cfg.BaselineProfile.Priority
+			},
+			wantError: "boosted priority 10 must be lower than baseline priority 10",
+		},
+		{
+			name: "boosted time slice is not larger",
+			mutate: func(cfg *Config) {
+				cfg.BoostedProfile.ExecutionTime = cfg.BaselineProfile.ExecutionTime
+			},
+			wantError: "boosted execution time 20 must be greater than baseline execution time 20",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := validConfig()
+			tt.mutate(&cfg)
+			_, err := NewController(cfg, &fakePrometheus{}, nil, nil)
+			require.EqualError(t, err, tt.wantError)
+		})
+	}
+}
+
 func TestControllerRequiresBothSignalsBeforeCongestion(t *testing.T) {
 	prom := &fakePrometheus{values: map[string]float64{"service": 120, "scheduling": 5}}
 	strategy := &fakeStrategy{}

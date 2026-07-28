@@ -12,6 +12,9 @@ const (
 	StateNormal    State = "Normal"
 	StateCongested State = "Congested"
 	StateRecovery  State = "Recovery"
+
+	schedulerPriorityMin = 0
+	schedulerPriorityMax = 20
 )
 
 type Profile struct {
@@ -100,6 +103,26 @@ func NewController(cfg Config, prom PrometheusClient, strategy StrategyClient, s
 	if cfg.Cooldown <= 0 {
 		cfg.Cooldown = 5 * time.Minute
 	}
+	if err := validateProfile("baseline", cfg.BaselineProfile); err != nil {
+		return nil, err
+	}
+	if err := validateProfile("boosted", cfg.BoostedProfile); err != nil {
+		return nil, err
+	}
+	if cfg.BoostedProfile.Priority >= cfg.BaselineProfile.Priority {
+		return nil, fmt.Errorf(
+			"boosted priority %d must be lower than baseline priority %d",
+			cfg.BoostedProfile.Priority,
+			cfg.BaselineProfile.Priority,
+		)
+	}
+	if cfg.BoostedProfile.ExecutionTime <= cfg.BaselineProfile.ExecutionTime {
+		return nil, fmt.Errorf(
+			"boosted execution time %d must be greater than baseline execution time %d",
+			cfg.BoostedProfile.ExecutionTime,
+			cfg.BaselineProfile.ExecutionTime,
+		)
+	}
 	if prom == nil {
 		return nil, fmt.Errorf("prometheus client is required")
 	}
@@ -133,6 +156,22 @@ func NewController(cfg Config, prom PrometheusClient, strategy StrategyClient, s
 		c.targets[target.Name] = &targetRuntime{config: target, state: StateNormal}
 	}
 	return c, nil
+}
+
+func validateProfile(name string, profile Profile) error {
+	if profile.Priority < schedulerPriorityMin || profile.Priority > schedulerPriorityMax {
+		return fmt.Errorf(
+			"%s priority %d must be between %d and %d",
+			name,
+			profile.Priority,
+			schedulerPriorityMin,
+			schedulerPriorityMax,
+		)
+	}
+	if profile.ExecutionTime <= 0 {
+		return fmt.Errorf("%s execution time %d must be positive", name, profile.ExecutionTime)
+	}
+	return nil
 }
 
 func (c *Controller) SetClock(clock func() time.Time) {
