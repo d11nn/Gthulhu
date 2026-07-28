@@ -9,6 +9,61 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
+func (suite *HandlerTestSuite) TestInternalStrategyUpsertCreatesIntent() {
+	suite.T().Setenv("MANAGER_INTERNAL_TOKEN", "controller-test-token")
+	strategyReq := rest.CreateScheduleStrategyRequest{
+		StrategyNamespace: "aether-smf-autoscaling",
+		K8sNamespace:      []string{"aether-5gc"},
+		LabelSelectors: []rest.LabelSelector{
+			{Key: "app", Value: "smf"},
+		},
+		Priority:      2,
+		ExecutionTime: 50000000,
+	}
+
+	suite.MockK8SAdapter.EXPECT().QueryPods(mock.Anything, mock.Anything).Return([]*domain.Pod{{PodID: "smf-pod", Name: "smf-0", K8SNamespace: "aether-5gc", Labels: map[string]string{"app": "smf"}, NodeID: "node1"}}, nil).Once()
+	suite.MockK8SAdapter.EXPECT().QueryDecisionMakerPods(mock.Anything, mock.Anything).Return([]*domain.DecisionMakerPod{{Host: "dm-host", NodeID: "node1", Port: 8080}}, nil).Once()
+	suite.MockDMAdapter.EXPECT().SendSchedulingIntent(mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
+
+	response := rest.SuccessResponse[rest.InternalScheduleStrategyResponse]{}
+	_, recorder := suite.sendV1Request(http.MethodPut, "/internal/strategies", &strategyReq, &response, "controller-test-token")
+	suite.Require().Equal(http.StatusOK, recorder.Code)
+	suite.Require().NotNil(response.Data)
+	suite.Require().NotEmpty(response.Data.StrategyID)
+
+	intents := &domain.QueryIntentOptions{PodIDs: []string{"smf-pod"}}
+	suite.Require().NoError(suite.Handler.Svc.ListScheduleIntents(suite.Ctx, intents))
+	suite.Require().Len(intents.Result, 1)
+	suite.Require().Equal(strategyReq.Priority, intents.Result[0].Priority)
+	suite.Require().Equal(strategyReq.ExecutionTime, intents.Result[0].ExecutionTime)
+
+	baselineReq := strategyReq
+	baselineReq.Priority = 10
+	baselineReq.ExecutionTime = 20000000
+	suite.MockK8SAdapter.EXPECT().QueryPods(mock.Anything, mock.Anything).Return([]*domain.Pod{{PodID: "smf-pod", Name: "smf-0", K8SNamespace: "aether-5gc", Labels: map[string]string{"app": "smf"}, NodeID: "node1"}}, nil).Once()
+	suite.MockK8SAdapter.EXPECT().QueryDecisionMakerPods(mock.Anything, mock.Anything).Return([]*domain.DecisionMakerPod{{Host: "dm-host", NodeID: "node1", Port: 8080}}, nil).Twice()
+	suite.MockDMAdapter.EXPECT().DeleteSchedulingIntents(mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
+	suite.MockDMAdapter.EXPECT().SendSchedulingIntent(mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
+
+	updateResponse := rest.SuccessResponse[rest.InternalScheduleStrategyResponse]{}
+	_, recorder = suite.sendV1Request(http.MethodPut, "/internal/strategies", &baselineReq, &updateResponse, "controller-test-token")
+	suite.Require().Equal(http.StatusOK, recorder.Code)
+	suite.Require().Equal(response.Data.StrategyID, updateResponse.Data.StrategyID)
+
+	updatedIntents := &domain.QueryIntentOptions{PodIDs: []string{"smf-pod"}}
+	suite.Require().NoError(suite.Handler.Svc.ListScheduleIntents(suite.Ctx, updatedIntents))
+	suite.Require().Len(updatedIntents.Result, 1)
+	suite.Require().Equal(baselineReq.Priority, updatedIntents.Result[0].Priority)
+	suite.Require().Equal(baselineReq.ExecutionTime, updatedIntents.Result[0].ExecutionTime)
+}
+
+func (suite *HandlerTestSuite) TestInternalStrategyUpsertRejectsInvalidToken() {
+	suite.T().Setenv("MANAGER_INTERNAL_TOKEN", "controller-test-token")
+	response := rest.ErrorResponse{}
+	_, recorder := suite.sendV1Request(http.MethodPut, "/internal/strategies", &rest.CreateScheduleStrategyRequest{StrategyNamespace: "aether-smf-autoscaling"}, &response, "wrong-token")
+	suite.Require().Equal(http.StatusUnauthorized, recorder.Code)
+}
+
 func (suite *HandlerTestSuite) TestIntegrationStrategyHandler() {
 	adminUser, adminPwd := config.GetManagerConfig().Account.AdminEmail, config.GetManagerConfig().Account.AdminPassword
 	adminToken := suite.login(adminUser, adminPwd.Value(), http.StatusOK)

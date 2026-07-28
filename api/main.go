@@ -6,6 +6,7 @@ import (
 
 	dmcmd "github.com/Gthulhu/api/decisionmaker/cmd"
 	managercmd "github.com/Gthulhu/api/manager/cmd"
+	scalingcontrollercmd "github.com/Gthulhu/api/scalingcontroller/cmd"
 	"github.com/spf13/cobra"
 )
 
@@ -14,7 +15,7 @@ var (
 )
 
 func main() {
-	rootCmd.AddCommand(managercmd.ManagerCmd, dmcmd.DMCmd)
+	rootCmd.AddCommand(managercmd.ManagerCmd, dmcmd.DMCmd, scalingcontrollercmd.ScalingControllerCmd)
 	if err := rootCmd.Execute(); err != nil {
 		log.Fatalf("Command execution failed: %v", err)
 		os.Exit(1)

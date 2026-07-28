@@ -1,0 +1,19 @@
+{{- if .Values.controller.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "gthulhu.fullname" . }}-scaling-controller
+  labels:
+    {{- include "gthulhu.labels" . | nindent 4 }}
+    app.kubernetes.io/component: scaling-controller
+spec:
+  type: {{ .Values.controller.service.type }}
+  ports:
+    - port: {{ .Values.controller.service.port }}
+      targetPort: metrics
+      protocol: TCP
+      name: metrics
+  selector:
+    {{- include "gthulhu.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: scaling-controller
+{{- end }}

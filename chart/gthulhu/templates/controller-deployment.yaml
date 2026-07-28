@@ -1,0 +1,78 @@
+{{- if .Values.controller.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "gthulhu.fullname" . }}-scaling-controller
+  labels:
+    {{- include "gthulhu.labels" . | nindent 4 }}
+    app.kubernetes.io/component: scaling-controller
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "gthulhu.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: scaling-controller
+  template:
+    metadata:
+      labels:
+        {{- include "gthulhu.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: scaling-controller
+    spec:
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "gthulhu.fullname" . }}-scaling-controller
+      containers:
+        - name: scaling-controller
+          image: "{{ .Values.controller.image.repository }}:{{ .Values.controller.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.controller.image.pullPolicy }}
+          command:
+            - /app/main
+            - scaling-controller
+          args:
+            - --config
+            - /etc/gthulhu-scaling-controller/config.json
+          {{- if eq .Values.controller.strategyMode "manager" }}
+          env:
+            - name: GTHULHU_MANAGER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "gthulhu.controllerAuthSecretName" . }}
+                  key: {{ .Values.controller.managerAuth.tokenKey }}
+          {{- end }}
+          ports:
+            - name: metrics
+              containerPort: {{ .Values.controller.service.targetPort }}
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: metrics
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: metrics
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          volumeMounts:
+            - name: config
+              mountPath: /etc/gthulhu-scaling-controller
+              readOnly: true
+          resources:
+            {{- toYaml .Values.controller.resources | nindent 12 }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "gthulhu.fullname" . }}-scaling-controller
+      {{- with .Values.controller.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.controller.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

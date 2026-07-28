@@ -1,0 +1,21 @@
+{{- if and .Values.controller.enabled .Values.monitoring.enabled .Values.monitoring.serviceMonitor.enabled .Values.controller.serviceMonitor.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "gthulhu.fullname" . }}-scaling-controller
+  labels:
+    {{- include "gthulhu.labels" . | nindent 4 }}
+    app.kubernetes.io/component: scaling-controller
+    {{- with .Values.controller.serviceMonitor.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "gthulhu.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: scaling-controller
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: {{ .Values.controller.serviceMonitor.interval }}
+{{- end }}

@@ -324,6 +324,86 @@ monitoring:
     labels: {}
     interval: 30s
 
+
+# Scheduling-Aware Scaling Controller
+controller:
+  enabled: false
+  image:
+    repository: ghcr.io/gthulhu/gthulhu-api
+    pullPolicy: Always
+    tag: "develop"
+  prometheusAddress: http://prometheus-kube-prometheus-prometheus.cattle-monitoring-system:9090
+  managerAddress: http://gthulhu-manager.gthulhu-system.svc:8080
+  strategyMode: manager
+  managerAuth:
+    existingSecret: ""
+    tokenKey: token
+  strategyNamespace: gthulhu-system
+  kubeconfig: ""
+  listenAddress: ":9090"
+  pollInterval: 30s
+  cooldown: 300s
+  hysteresis: 3
+  baselinePriority: 10
+  boostedPriority: 2
+  baselineExecutionTime: 20000000
+  boostedExecutionTime: 50000000
+  service:
+    type: ClusterIP
+    port: 9090
+    targetPort: 9090
+  serviceMonitor:
+    enabled: true
+    interval: 30s
+    labels: {}
+  resources:
+    limits:
+      cpu: 500m
+      memory: 256Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi
+  nodeSelector:
+    kubernetes.io/os: linux
+  tolerations: []
+  targets:
+    smf:
+      namespace: aether-5gc
+      selector:
+        app: smf
+        release: sd-core
+      scaleTargetRef:
+        apiVersion: apps/v1
+        kind: Deployment
+        name: smf
+      scaledObjectName: smf-gthulhu-scaler
+      minReplicas: 1
+      maxReplicas: 5
+      serviceQuery: 'max(smf_pdu_sessions{namespace="aether-5gc"})'
+      schedulingQuery: 'max(rate(gthulhu_pod_involuntary_ctx_switches_total{namespace="aether-5gc",pod_name=~"smf.*"}[5m]))'
+      serviceThreshold: 100
+      schedulingThreshold: 100
+      recoveryServiceThreshold: 70
+      recoverySchedulingThreshold: 60
+    upf:
+      namespace: aether-5gc
+      selector:
+        app: upf
+        release: sd-core
+      scaleTargetRef:
+        apiVersion: apps/v1
+        kind: StatefulSet
+        name: upf
+      scaledObjectName: upf-gthulhu-scaler
+      minReplicas: 1
+      maxReplicas: 5
+      serviceQuery: 'sum(rate(upf_session_tx_bytes{namespace="aether-5gc"}[5m]))'
+      schedulingQuery: 'max(rate(gthulhu_pod_involuntary_ctx_switches_total{namespace="aether-5gc",pod_name=~"upf.*"}[5m]))'
+      serviceThreshold: 100000000
+      schedulingThreshold: 100
+      recoveryServiceThreshold: 70000000
+      recoverySchedulingThreshold: 60
+
 # ── KEDA Auto-Scaling Integration ──
 # Requires: KEDA operator installed in the cluster
 # Metrics flow: Monitor eBPF → Prometheus → KEDA Prometheus trigger → HPA

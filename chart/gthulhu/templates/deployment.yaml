@@ -254,6 +254,13 @@ spec:
               value: {{ .Values.manager.env.loggingLevel | quote }}
             - name: MANAGER_K8S_IN_CLUSTER
               value: {{ .Values.manager.env.inCluster | quote }}
+            {{- if and .Values.controller.enabled (eq .Values.controller.strategyMode "manager") }}
+            - name: MANAGER_INTERNAL_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "gthulhu.controllerAuthSecretName" . }}
+                  key: {{ .Values.controller.managerAuth.tokenKey }}
+            {{- end }}
             - name: TZ
               value: {{ .Values.global.timezone | quote }}
             {{- if .Values.mtls.enabled }}

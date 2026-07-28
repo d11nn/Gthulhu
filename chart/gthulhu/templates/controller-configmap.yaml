@@ -1,0 +1,48 @@
+{{- if .Values.controller.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "gthulhu.fullname" . }}-scaling-controller
+  labels:
+    {{- include "gthulhu.labels" . | nindent 4 }}
+    app.kubernetes.io/component: scaling-controller
+data:
+  config.json: |
+    {
+      "prometheusAddress": {{ .Values.controller.prometheusAddress | quote }},
+      "managerAddress": {{ .Values.controller.managerAddress | quote }},
+      "strategyMode": {{ .Values.controller.strategyMode | quote }},
+      "strategyNamespace": {{ .Values.controller.strategyNamespace | quote }},
+      "kubeconfig": {{ .Values.controller.kubeconfig | quote }},
+      "kedaEnabled": {{ .Values.keda.enabled | default false }},
+      "listenAddress": {{ .Values.controller.listenAddress | quote }},
+      "pollInterval": {{ .Values.controller.pollInterval | quote }},
+      "cooldown": {{ .Values.controller.cooldown | quote }},
+      "hysteresis": {{ .Values.controller.hysteresis }},
+      "baselinePriority": {{ .Values.controller.baselinePriority }},
+      "boostedPriority": {{ .Values.controller.boostedPriority }},
+      "baselineExecutionTime": {{ .Values.controller.baselineExecutionTime | int64 }},
+      "boostedExecutionTime": {{ .Values.controller.boostedExecutionTime | int64 }},
+      "targets": [
+        {{- $first := true }}
+        {{- range $name, $target := .Values.controller.targets }}
+        {{- if not $first }},{{ end }}
+        {{- $first = false }}
+        {
+          "name": {{ $name | quote }},
+          "namespace": {{ $target.namespace | quote }},
+          "selector": {{ toJson $target.selector }},
+          "serviceQuery": {{ $target.serviceQuery | quote }},
+          "schedulingQuery": {{ $target.schedulingQuery | quote }},
+          "serviceThreshold": {{ $target.serviceThreshold }},
+          "schedulingThreshold": {{ $target.schedulingThreshold }},
+          "recoveryServiceThreshold": {{ $target.recoveryServiceThreshold }},
+          "recoverySchedulingThreshold": {{ $target.recoverySchedulingThreshold }},
+          "minReplicas": {{ $target.minReplicas }},
+          "maxReplicas": {{ $target.maxReplicas }},
+          "scaledObjectName": {{ $target.scaledObjectName | quote }}
+        }
+        {{- end }}
+      ]
+    }
+{{- end }}

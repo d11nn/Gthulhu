@@ -1,0 +1,30 @@
+{{- if and .Values.controller.enabled .Values.keda.enabled }}
+{{- range $name, $target := .Values.controller.targets }}
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: {{ $target.scaledObjectName }}
+  namespace: {{ $target.namespace }}
+  labels:
+    {{- include "gthulhu.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: scaling-controller
+    gthulhu.io/target: {{ $name | quote }}
+spec:
+  scaleTargetRef:
+    apiVersion: {{ $target.scaleTargetRef.apiVersion | default "apps/v1" }}
+    kind: {{ $target.scaleTargetRef.kind | default "Deployment" }}
+    name: {{ $target.scaleTargetRef.name }}
+  pollingInterval: {{ $.Values.keda.example.pollingInterval | default 30 }}
+  cooldownPeriod: {{ $.Values.keda.example.cooldownPeriod | default 300 }}
+  minReplicaCount: {{ $target.minReplicas }}
+  maxReplicaCount: {{ $target.maxReplicas }}
+  triggers:
+    - type: prometheus
+      metadata:
+        serverAddress: {{ $.Values.controller.prometheusAddress | quote }}
+        metricName: {{ printf "gthulhu_%s_combined_pressure" $name | quote }}
+        query: {{ printf "(scalar(%s) >= bool %v) * (scalar(%s) >= bool %v)" $target.serviceQuery $target.serviceThreshold $target.schedulingQuery $target.schedulingThreshold | quote }}
+        threshold: "0.5"
+{{- end }}
+{{- end }}

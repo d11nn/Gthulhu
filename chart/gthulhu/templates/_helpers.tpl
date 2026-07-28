@@ -89,3 +89,14 @@ mTLS Secret name — returns existingSecret if set, otherwise the chart-managed 
 {{- printf "%s-mtls-certs" (include "gthulhu.fullname" .) }}
 {{- end }}
 {{- end }}
+
+{{/*
+Shared secret used only by the in-cluster scaling controller and Manager.
+*/}}
+{{- define "gthulhu.controllerAuthSecretName" -}}
+{{- if .Values.controller.managerAuth.existingSecret }}
+{{- .Values.controller.managerAuth.existingSecret }}
+{{- else }}
+{{- printf "%s-controller-auth" (include "gthulhu.fullname" .) }}
+{{- end }}
+{{- end }}

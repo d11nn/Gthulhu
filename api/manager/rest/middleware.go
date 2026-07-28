@@ -2,7 +2,9 @@ package rest
 
 import (
 	"bytes"
+	"crypto/subtle"
 	"net/http"
+	"os"
 	"runtime/debug"
 	"time"
 
@@ -39,6 +41,37 @@ func (h *Handler) GetAuthMiddleware(permissionKey domain.PermissionKey) func(nex
 			ctx = h.SetRolePolicyInContext(ctx, rolePolicy)
 			r = r.WithContext(ctx)
 			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+const internalControllerUID = "000000000000000000000001"
+
+func (h *Handler) GetInternalAuthMiddleware() func(next http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ctx := r.Context()
+			expectedToken := os.Getenv("MANAGER_INTERNAL_TOKEN")
+			if expectedToken == "" {
+				h.ErrorResponse(ctx, w, http.StatusServiceUnavailable, "Internal controller authentication is not configured", nil)
+				return
+			}
+
+			const bearerPrefix = "Bearer "
+			authorization := r.Header.Get("Authorization")
+			if len(authorization) <= len(bearerPrefix) || authorization[:len(bearerPrefix)] != bearerPrefix {
+				h.ErrorResponse(ctx, w, http.StatusUnauthorized, "Invalid internal Authorization header", nil)
+				return
+			}
+			providedToken := authorization[len(bearerPrefix):]
+			if subtle.ConstantTimeCompare([]byte(providedToken), []byte(expectedToken)) != 1 {
+				h.ErrorResponse(ctx, w, http.StatusUnauthorized, "Invalid internal controller token", nil)
+				return
+			}
+
+			claims := domain.Claims{UID: internalControllerUID, TokenType: "internal-controller"}
+			ctx = h.SetClaimsInContext(ctx, claims)
+			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
 }
