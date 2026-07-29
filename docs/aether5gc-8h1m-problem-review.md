@@ -11,6 +11,8 @@
   - `/home/ubuntu/Gthulhu` 提交紀錄
   - `/home/ubuntu/aether-onramp-gthulhu-addon` 提交紀錄
   - `/home/ubuntu/aether-onramp` 部署分支與 node1 即時只讀檢查
+  - Ubuntu 25.04 release notes：https://documentation.ubuntu.com/release-notes/25.04/
+  - Ubuntu 24.04 LTS release notes：https://documentation.ubuntu.com/release-notes/24.04/
 
 ## 結論摘要
 
