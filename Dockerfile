@@ -2,7 +2,7 @@
 # Builder stage: always runs on the build host's native platform to avoid
 # slow QEMU emulation (especially for the Rust/cargo scx_rustland build).
 # Cross-compilation is used when TARGETARCH differs from BUILDARCH.
-FROM --platform=$BUILDPLATFORM ubuntu:25.04 AS builder
+FROM --platform=$BUILDPLATFORM ubuntu:24.04 AS builder
 
 # Install build dependencies
 RUN apt-get update && \
@@ -85,7 +85,7 @@ RUN set -e; \
     make build ARCH=${BUILD_ARCH}
 
 # Runtime stage: uses the actual target platform
-FROM ubuntu:25.04
+FROM ubuntu:24.04
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
