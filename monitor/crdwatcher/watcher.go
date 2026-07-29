@@ -87,12 +87,20 @@ func (w *Watcher) Run(ctx context.Context) error {
 }
 
 func (w *Watcher) watchLoop(ctx context.Context) error {
-	watcher, err := w.client.Resource(psmGVR).Namespace("").Watch(ctx, metav1.ListOptions{})
+	resourceVersion, err := w.loadInitialSpecs(ctx)
+	if err != nil {
+		return err
+	}
+	w.reconcilePIDs()
+
+	watcher, err := w.client.Resource(psmGVR).Namespace("").Watch(ctx, metav1.ListOptions{
+		ResourceVersion: resourceVersion,
+	})
 	if err != nil {
 		return fmt.Errorf("watch: %w", err)
 	}
 	defer watcher.Stop()
-	w.logger.Info("CRD watcher started for PodSchedulingMetrics")
+	w.logger.Info("CRD watcher started for PodSchedulingMetrics", "resourceVersion", resourceVersion)
 
 	// Periodic reconcile: the pidCache and podIndex are populated asynchronously
 	// by PodMapper.StartPeriodicScan and podindexer.Run, so the snapshot taken
@@ -115,6 +123,38 @@ func (w *Watcher) watchLoop(ctx context.Context) error {
 			w.handleEvent(event)
 		}
 	}
+}
+
+// loadInitialSpecs lists existing resources before starting the watch. Watching
+// from the list resourceVersion closes the race where a scheduler starts after
+// the PodSchedulingMetrics resources already exist or they change between the
+// list and watch requests.
+func (w *Watcher) loadInitialSpecs(ctx context.Context) (string, error) {
+	list, err := w.client.Resource(psmGVR).Namespace("").List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return "", fmt.Errorf("list: %w", err)
+	}
+	w.replaceSpecs(list.Items)
+	return list.GetResourceVersion(), nil
+}
+
+func (w *Watcher) replaceSpecs(items []unstructured.Unstructured) {
+	specs := make(map[string]*domain.PodSchedulingMetrics, len(items))
+	for i := range items {
+		obj := &items[i]
+		key := obj.GetNamespace() + "/" + obj.GetName()
+		psm, err := parsePSM(obj)
+		if err != nil {
+			w.logger.Warn("failed to parse listed PodSchedulingMetrics", "key", key, "error", err)
+			continue
+		}
+		specs[key] = psm
+	}
+
+	w.mu.Lock()
+	w.specs = specs
+	w.mu.Unlock()
+	w.logger.Info("loaded existing PodSchedulingMetrics", "count", len(specs))
 }
 
 func (w *Watcher) handleEvent(event watch.Event) {

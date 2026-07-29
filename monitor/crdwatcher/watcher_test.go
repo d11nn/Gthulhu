@@ -5,6 +5,8 @@
 package crdwatcher
 
 import (
+	"io"
+	"log/slog"
 	"testing"
 
 	"github.com/Gthulhu/Gthulhu/monitor/collector"
@@ -233,5 +235,62 @@ func TestWatcher_GetActiveSpecs(t *testing.T) {
 	specs := w.GetActiveSpecs()
 	if len(specs) != 2 {
 		t.Errorf("expected 2 specs, got %d", len(specs))
+	}
+}
+
+func TestWatcher_ReplaceSpecsFromList(t *testing.T) {
+	items := []unstructured.Unstructured{
+		{
+			Object: map[string]interface{}{
+				"apiVersion": "gthulhu.io/v1alpha1",
+				"kind":       "PodSchedulingMetrics",
+				"metadata": map[string]interface{}{
+					"name":      "smf",
+					"namespace": "aether-5gc",
+				},
+				"spec": map[string]interface{}{
+					"enabled": true,
+					"labelSelectors": []interface{}{
+						map[string]interface{}{"key": "app", "value": "smf"},
+					},
+				},
+			},
+		},
+		{
+			Object: map[string]interface{}{
+				"apiVersion": "gthulhu.io/v1alpha1",
+				"kind":       "PodSchedulingMetrics",
+				"metadata": map[string]interface{}{
+					"name":      "upf",
+					"namespace": "aether-5gc",
+				},
+				"spec": map[string]interface{}{
+					"enabled": true,
+					"labelSelectors": []interface{}{
+						map[string]interface{}{"key": "app", "value": "upf"},
+					},
+				},
+			},
+		},
+	}
+	w := &Watcher{
+		logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		specs: map[string]*domain.PodSchedulingMetrics{
+			"stale/removed": {Name: "removed", Namespace: "stale"},
+		},
+	}
+
+	w.replaceSpecs(items)
+	specs := w.GetActiveSpecs()
+	if len(specs) != 2 {
+		t.Fatalf("expected 2 listed specs, got %d", len(specs))
+	}
+	for _, spec := range specs {
+		if spec.Namespace != "aether-5gc" {
+			t.Errorf("spec %q namespace = %q, want aether-5gc", spec.Name, spec.Namespace)
+		}
+	}
+	if _, found := w.specs["stale/removed"]; found {
+		t.Error("stale spec remained after initial list replacement")
 	}
 }
