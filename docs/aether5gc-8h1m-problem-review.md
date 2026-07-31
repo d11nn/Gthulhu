@@ -62,6 +62,122 @@
 
 這表示 API 顯示 release `deployed`，但 workload prerequisite 並不健康。
 
+## 新手版：MongoDB 為什麼反覆重啟
+
+### 一句話答案
+
+MongoDB 不是自己崩潰，而是健康檢查在主機 CPU 嚴重壅塞時超時。Kubernetes 因此誤以為 MongoDB 卡死，主動把它關掉再啟動；重啟又增加主機負擔，下一輪健康檢查更容易超時，最後形成反覆重啟的迴圈。
+
+### 2026-07-31 再次只讀確認
+
+兩天後問題仍在：
+
+- `mongodb-0` 已累積 222 次 restart。
+- `mongodb-1` 已累積 463 次 restart。
+- 兩個 Pod 都觀察到從短暫 `1/1 Running` 變回 `0/1 Running`。
+- 8 vCPU node 的 load average 約為 `56.27, 49.67, 46.42`。
+- CPU PSI `some avg10=86.17%`，表示在最近 10 秒內，至少有一個工作約 86% 的時間因搶不到 CPU 而等待。
+
+`Running` 只代表容器程序還存在，不等於應用程式已通過健康檢查。因此 `0/1 Running` 的意思是「MongoDB 容器在跑，但 Kubernetes 目前不認為它 Ready」。
+
+### Kubernetes 做了兩種不同的檢查
+
+目前 MongoDB data replica 的檢查設定是：
+
+| 檢查 | 頻率與期限 | 失敗後的動作 |
+|---|---|---|
+| readiness probe | 每 10 秒執行一次，最多等 5 秒 | 將 Pod 標成 `0/1`，暫時不視為可服務；不會直接重啟 |
+| liveness probe | 每 20 秒執行一次，最多等 10 秒，連續失敗 6 次 | kubelet 判定容器失去生命跡象並重啟它 |
+
+所以看到 readiness timeout 時，先發生的是 Pod 變成 `0/1`；真正按下「重啟」按鈕的是後續持續失敗的 liveness probe。
+
+Kubernetes event 已直接寫出這條因果：
+
+```text
+Readiness probe failed:
+command timed out: "/bitnami/scripts/readiness-probe.sh" timed out after 5s
+
+Liveness probe failed:
+command timed out: "/bitnami/scripts/ping-mongodb.sh" timed out after 10s
+
+Container mongodb failed liveness probe, will be restarted
+```
+
+在保留的 event 時間窗內，`mongodb-1` 有 2,784 次 readiness timeout、693 次 liveness timeout，以及 19 次因 liveness 失敗而重啟。Pod 顯示的 463 次 restart 是這個 Pod 從建立至今的累計值；event 只保留近期資料，所以兩個數字不應直接相等。
+
+### 問題在於每次檢查都會啟動一個 `mongosh`
+
+liveness script 的核心內容是：
+
+```bash
+exec mongosh --port 27017 --eval "db.adminCommand('ping')"
+```
+
+readiness script 也會啟動 `mongosh`，再執行 `db.hello()` 判斷節點是不是 primary 或 secondary。
+
+這不是單純查看 27017 port 是否開啟。`mongosh` 是一個完整的 Node.js 命令列程式；每次 probe 都要建立新程序、載入 runtime、連線 MongoDB、執行指令，再把結果交回 kubelet。兩個 MongoDB data replica 都會各自反覆執行這些程序。
+
+正常負載下，這個檢查可能很快完成。但目前 8 vCPU node 上有大量工作在排隊，MongoDB 容器本身又受 CPU limit 約束。MongoDB 可能仍然活著、仍能處理請求，只是新啟動的 `mongosh` 沒有在 5 秒或 10 秒期限內取得足夠 CPU 完成檢查。
+
+MongoDB 當下的 current log 也看得到來自 `127.0.0.1`、client 為 `mongosh 2.5.6`、platform 為 Node.js `v20.19.4` 的連線。這和 probe script 的行為一致。
+
+### MongoDB log 證明它是被外部關掉，不是自己崩潰
+
+`mongodb-1` 上一次重啟前的 MongoDB log：
+
+```text
+"msg":"Received signal","attr":{"signal":15,"error":"Terminated"}
+"msg":"Signal was sent by kill(2)","attr":{"pid":0,"uid":0}
+"msg":"Entering quiesce mode for shutdown","attr":{"quiesceTimeMillis":15000}
+"msg":"WiredTiger closed"
+"msg":"mongod shutdown complete"
+"msg":"Shutting down","attr":{"exitCode":0}
+```
+
+逐行翻成白話：
+
+1. `signal: 15` 是 `SIGTERM`，意思是外部要求 MongoDB 正常關機。
+2. `kill(2)` 表示關機訊號來自作業系統層級，不是 MongoDB 自己丟出 fatal error。
+3. `quiesce mode` 表示 MongoDB 先停止接新工作，準備有秩序地退出。
+4. `WiredTiger closed` 表示儲存引擎已正常關閉。
+5. `exitCode: 0` 表示程序認為這次退出成功，不是 crash。
+
+Kubernetes 的 container 狀態也吻合：
+
+```text
+Last State:  Terminated
+Reason:      Completed
+Exit Code:   0
+```
+
+因此目前證據不支持「MongoDB 資料損壞後自行崩潰」或「MongoDB 程式發生 fatal error」。證據支持的是：liveness probe 超時後，kubelet 對容器送出 `SIGTERM`；MongoDB 完成正常關機，之後由 Kubernetes 建立新的 container。
+
+### 完整的反覆重啟迴圈
+
+1. MongoDB 啟動並可處理工作。
+2. Kubernetes 持續啟動新的 `mongosh` 做 readiness 與 liveness 檢查。
+3. 主機 CPU 長時間壅塞，probe 程序無法在 5 秒或 10 秒內完成。
+4. readiness 失敗，Pod 先變成 `0/1`。
+5. liveness 連續失敗，kubelet 判定 MongoDB 卡死。
+6. kubelet 送出 `SIGTERM`；MongoDB checkpoint、關閉 WiredTiger，並以 exit code 0 結束。
+7. Kubernetes 重啟 container；啟動、儲存恢復、container runtime 與後續 probes 又消耗 CPU。
+8. 主機壓力沒有消失，下一輪 probe 再度超時，回到第 4 步。
+
+這是一個「健康檢查超時造成重啟，重啟又加重超時」的回饋迴圈。它不代表每次 restart 前 MongoDB 都已不能使用；它代表目前的健康檢查成本與期限不適合這台已過載的單節點主機。
+
+`mongodb-1` 的 restart 數比 `mongodb-0` 高，可能和每次檢查發生的時間、當時 replica role 或瞬間負載有關。現有證據足以證明兩者都受到相同的 probe timeout 機制影響，但不足以斷言兩者次數差異的唯一原因。
+
+### 已準備但尚未套用的修復
+
+已完成的修復會把 `exec + mongosh` probe 改為 TCP 27017 檢查，並把 data replica CPU limit 提高到 1 core：
+
+- isolated addon commit：`cf081af`
+- deployment branch commit：`380940d`
+
+TCP probe 只需確認 MongoDB 是否正在監聽 port，不必每次啟動完整的 `mongosh`，因此能直接移除目前最明顯的 probe 額外負擔。代價是 TCP probe 只能證明程序有監聽，不能判斷節點目前是 primary、secondary，或 replica set 邏輯是否完全健康。
+
+對目前要先穩定單節點 lab 的情境，這是務實的第一步；若是正式多節點環境，仍應在主機資源足夠後設計能判斷 replica role、但不會因短暫 CPU 壅塞就殺掉資料庫的 readiness 檢查。這份修復已通過 render、結構斷言與 server-side dry-run，但因實際套用屬於叢集寫入，目前沒有執行。
+
 ## 為何不能直接繼續安裝 Gthulhu
 
 ### 1. 會把已過載的單節點推向更差狀態
