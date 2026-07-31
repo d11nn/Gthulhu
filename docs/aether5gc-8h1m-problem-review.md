@@ -243,7 +243,7 @@ Gthulhu 會新增至少：
 | P3 | scheduler/API 實際映像 build/import 未執行 | Ansible、tag、save/import、Helm image selection 已驗證 | build/import 是 node1 寫入與長時間網路/CPU 工作，應在 SD-Core 恢復後執行 |
 | P4 | 正式 thresholds 未校準 | metric names 與 PromQL 已 live 驗證 | 需要代表性 5GC 流量與實際 scheduling series 才能校準 |
 | P5 | OnRamp commits 未 push | isolated 與 deployment branches 都有完整本機 commits | 不存在允許的 `d11nn/aether-onramp` repo；依限制不能 push 到 `opennetworkinglab/*` |
-| P6 | 文檔無 commit | proposal、facts 與本復盤位於 `/home/ubuntu` | 這些路徑不屬於任何 Git repo |
+| P6 | 外部工作文檔未納入版本控制 | proposal 與 facts 仍位於 `/home/ubuntu`；本復盤已納入 Gthulhu `docs` 並提交 | proposal/facts 路徑不屬於任何 Git repo |
 | P7 | sandbox helper 持續失效 | 可用 escalated read/validation 與 guarded Python edit 繞過 | `bwrap: loopback: Failed RTM_NEWADDR` 是執行環境問題，不是 repo 程式碼問題 |
 
 ### C. 已解決的主要問題
